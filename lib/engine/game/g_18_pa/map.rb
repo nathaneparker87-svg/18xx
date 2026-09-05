@@ -130,7 +130,7 @@ module Engine
           'D1' => 'Cleveland',
           'D15' => 'Schenectady',
           'D17' => 'Albany',
-          'D25' => 'Worchester',
+          'D25' => 'Worcester',
           'D27' => 'Boston',
           'E10' => 'Binghamton',
           'E22' => 'Springfield & Hartford',
@@ -150,6 +150,7 @@ module Engine
           'I18' => 'Long Beach',
           'J13' => 'Philadelphia',
           'J21' => 'Bonus per Token on Route',
+          'H25' => 'Fall River Ferry',
           'K2' => 'Columbus',
           'K10' => 'Baltimore',
           'K16' => 'Atlantic City',
@@ -161,7 +162,7 @@ module Engine
         MINOR_TILE_LAYS = [{ lay: true, upgrade: true }].freeze
 
         def tile_lays(entity)
-          entity.type == :minor ? MINOR_TILE_LAYS : MAJOR_TILE_LAYS
+          entity.minor? ? MINOR_TILE_LAYS : MAJOR_TILE_LAYS
         end
 
         HEXES = {
@@ -271,11 +272,11 @@ module Engine
             ['I8'] => 'city=revenue:20;path=a:1,b:_0;path=a:4,b:_0',
             ['J13'] => 'city=revenue:30;city=revenue:30;city=revenue:30;path=a:0,b:_0;path=a:2,b:_1;'\
                        'path=a:4,b:_2;label=PHI',
-            ['K10'] => 'city=revenue:30;path=a:0,b:_0;path=a:1,b:_0;path=a:4,b:_0',
+            ['K10'] => 'city=revenue:30;path=a:0,b:_0;path=a:1,b:_0;path=a:4,b:_0;label=BAL',
           },
           blue: {
-            ['G26'] => 'path=a:0,b:3,track:narrow;border=edge:1,type:impassable',
-            ['H25'] => 'town=revenue:yellow_20|green_10|brown_0;path=a:1,b:_0,track:narrow;path=a:3,b:_0,track:narrow;'\
+            ['G26'] => 'path=a:0,b:3;border=edge:1,type:impassable',
+            ['H25'] => 'town=revenue:0;path=a:1,b:_0;path=a:3,b:_0;'\
                        'border=edge:2,type:impassable',
           },
         }.freeze
