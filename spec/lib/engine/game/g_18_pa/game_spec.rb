@@ -32,8 +32,14 @@ module Engine
       corporation
     end
 
-    def set_phase(name)
+    def advance_to_phase(name)
       game.phase.next! until game.phase.name == name
+    end
+
+    def begin_operations
+      skip_auction
+      act(Action::Pass) while game.round.stock?
+      expect(game.round).to be_operating
     end
 
     describe 'setup and initial auction' do
@@ -99,10 +105,10 @@ module Engine
 
       it 'halves existing percentages and issues five more shares, capital and two tokens' do
         corporation = start_corporation
-        set_phase('4')
+        advance_to_phase('4')
         game.convert(corporation)
         expect(alice.percent_of(corporation)).to eq(20)
-        expect(game.shares_for_corporation(corporation).map(&:percent)).to eq([20] + [10] * 8)
+        expect(game.shares_for_corporation(corporation).map(&:percent)).to eq([20] + ([10] * 8))
         expect(corporation.cash).to eq(1000)
         expect(corporation.tokens.count { |t| t.type == :normal }).to eq(4)
         expect(game.cert_limit).to eq(12)
@@ -164,9 +170,31 @@ module Engine
     end
 
     describe 'local companies' do
+      it 'waits for the owner to consent, then offers that owner one share' do
+        corporation = start_corporation('B&A')
+        own_private('P6', bob)
+        advance_to_phase('4')
+        begin_operations
+        act(Action::Pass) # Old Colony track
+        act(Action::RunRoutes, routes: []) if game.round.active_step.is_a?(Step::Route)
+        act(Action::Pass) # B&A track
+        act(Action::Pass) # B&A conversion
+        expect(game.round.active_step).to be_a(Game::G18PA::Step::Acquire)
+        act(Action::Choose, corporation, choice: 'P6')
+        expect(game.current_entity).to eq(bob)
+        expect(game.company_by_id('P6').owner).to eq(bob)
+        act(Action::Choose, bob, choice: 'accept')
+        expect(game.company_by_id('P6').owner).to eq(corporation)
+        expect(bob.cash).to eq(610)
+        act(Action::Choose, bob, choice: 'buy')
+        expect(bob.percent_of(corporation)).to eq(20)
+        expect(bob.cash).to eq(510)
+        expect(game.current_entity).to eq(corporation)
+      end
+
       it 'acquires a bank-owned local on another city of the same tile and later receives a 2R' do
         corporation = start_corporation('B&A')
-        set_phase('4')
+        advance_to_phase('4')
         local = game.company_by_id('P6')
         expect(game.acquirable_companies(corporation)).to include(local)
         game.acquire(corporation, local)
@@ -175,7 +203,7 @@ module Engine
         expect(corporation.max_ownership_percent).to eq(80)
         expect(corporation.tokens.count(&:used)).to eq(3)
         expect(corporation.trains).to be_empty
-        set_phase('5')
+        advance_to_phase('5')
         game.event_regional_trains!
         expect(corporation.trains.map(&:name)).to eq(['2R'])
         expect(game.num_corp_trains(corporation)).to eq(0)
@@ -184,6 +212,39 @@ module Engine
     end
 
     describe 'destinations and train revenue' do
+      it 'activates PRR at the instant its home connects to Pittsburgh' do
+        corporation = start_corporation
+        %w[I6 I4].each do |hex|
+          tile = game.tiles.find { |t| t.name == '9' }
+          tile.rotate!(1)
+          game.update_tile_lists(tile, game.hex_by_id(hex).tile)
+          game.hex_by_id(hex).lay(tile)
+        end
+        game.track_and_tokens_changed!
+        token = game.destination_tokens[corporation]
+        expect(token.status).to be_nil
+        expect(game.city_tokened_by?(token.city, corporation)).to be(true)
+        # Once activated, it remains active even if the home connection is blocked later.
+        game.hex_by_id('I6').lay(Tile.from_code('blocked', :white, ''))
+        game.track_and_tokens_changed!
+        expect(token.status).to be_nil
+      end
+
+      it 'returns a duplicate acquired station on a brown city merger, retaining the home station' do
+        corporation = start_corporation('B&A')
+        advance_to_phase('4')
+        game.acquire(corporation, game.company_by_id('P6'))
+        acquired_token = corporation.tokens.find { |t| t.used && t.city == game.hex_by_id('D27').tile.cities[2] }
+        city = game.hex_by_id('D27')
+        brown = game.tiles.find { |t| t.name == 'X23' }
+        city.lay(brown)
+        game.track_and_tokens_changed!
+        expect(corporation.tokens.first.used).to be(true)
+        expect(acquired_token.used).to be(false)
+        expect(acquired_token.price).to eq(40)
+        expect(corporation.max_ownership_percent).to eq(80)
+      end
+
       it 'does not treat destination blockers or towns as stations' do
         corporation = game.corporation_by_id('PRR')
         destination = game.destination_tokens[corporation]
@@ -193,14 +254,173 @@ module Engine
       end
 
       it 'doubles an active destination again on a 3D without multiplying the station bonus' do
-        set_phase('3D')
+        advance_to_phase('3D')
         corporation = game.corporation_by_id('PRR')
         token = game.destination_tokens[corporation]
         token.status = nil
         train = game.trains.find { |t| t.name == '3D' }
         train.owner = corporation
         route = Route.new(game, game.phase, train)
-        expect(game.revenue_for(route, [token.city])).to eq(4 * 60 + 30)
+        expect(game.revenue_for(route, [token.city])).to eq((4 * 60) + 30)
+      end
+    end
+
+    describe 'Fall River ferry' do
+      it 'opens through private 5 construction, scores both shores, and closes on the first 5' do
+        own_private('P5', alice)
+        begin_operations
+        minor = game.minor_by_id('5')
+        providence = game.hex_by_id('F27').tile.cities.first
+        expect(game.graph.connected_nodes(minor)).not_to have_key(providence)
+        act(Action::LayTile, minor, hex: game.hex_by_id('H21'), tile: game.tiles.find { |t| t.name == '4' }, rotation: 1)
+        act(Action::RunRoutes, minor, routes: [])
+        act(Action::LayTile, minor, hex: game.hex_by_id('H23'), tile: game.tiles.find { |t| t.name == '9' }, rotation: 1)
+        expect(game).to be_ferry_open
+        expect(game.graph.connected_nodes(minor)).to have_key(providence)
+        route = Route.new(game, game.phase, minor.trains.first,
+                          connection_hexes: [%w[H19 H21], %w[H21 H23 H25], %w[H25 G26 F27]])
+        route.routes = [route]
+        expect(route.revenue).to eq(80)
+        advance_to_phase('5')
+        game.event_regional_trains!
+        expect(game).not_to be_ferry_open
+        expect(game.hex_by_id('H23').tile.color).to eq(:white)
+        expect(game.graph.connected_nodes(minor)).not_to have_key(providence)
+      end
+    end
+
+    describe 'train purchases in an operating round' do
+      it 'allows a cash-only presidential contribution for a trade when the treasury is empty' do
+        corporation = start_corporation
+        other = start_corporation('B&A', bob)
+        train = game.depot.depot_trains.first
+        game.buy_train(other, train, :free)
+        corporation.spend(corporation.cash, game.bank)
+        begin_operations
+        act(Action::Pass)
+        act(Action::BuyTrain, corporation, train: train, price: 100)
+        expect(corporation.cash).to eq(0)
+        expect(corporation.trains).to include(train)
+        expect(alice.cash).to eq(200)
+        expect(alice.debt).to eq(0)
+        expect(other.cash).to eq(600)
+      end
+
+      it 'does not let the president top up a nonempty treasury for a trade' do
+        corporation = start_corporation
+        other = start_corporation('B&A', bob)
+        train = game.depot.depot_trains.first
+        game.buy_train(other, train, :free)
+        corporation.spend(corporation.cash - 1, game.bank)
+        begin_operations
+        act(Action::Pass)
+        expect { act(Action::BuyTrain, corporation, train: train, price: 100) }.to raise_error(GameError, /treasury is empty/)
+        expect(train.owner).to eq(other)
+      end
+
+      it 'requires a depot purchase after emergency share sales' do
+        corporation = start_corporation
+        other = start_corporation('B&A', bob)
+        other.operating_history[[1, 1]] = OperatingInfo.new([], nil, 0, [])
+        share = other.ipo_shares.find { |s| !s.president }
+        game.share_pool.buy_shares(alice, share)
+        game.buy_train(other, game.depot.depot_trains.first, :free)
+        corporation.spend(corporation.cash, game.bank)
+        alice.spend(alice.cash, game.bank)
+        begin_operations
+        act(Action::Pass)
+        act(Action::SellShares, alice, shares: [share])
+        step = game.round.active_step
+        expect(step.other_trains(corporation)).to be_empty
+        train = game.depot.depot_trains.first
+        act(Action::BuyTrain, corporation, train: train, price: 100)
+        expect(alice.cash).to eq(0)
+        expect(alice.debt).to eq(0)
+      end
+
+      it 'permits borrowing for a 3D even when cash is sufficient for the available 5' do
+        corporation = start_corporation
+        corporation.spend(corporation.cash, game.bank)
+        game.bank.spend(250, alice)
+        advance_to_phase('5')
+        game.depot.upcoming.select { |t| %w[2 3 4].include?(t.name) }.each { |t| game.depot.forget_train(t) }
+        begin_operations
+        act(Action::Pass) until game.round.active_step.is_a?(Game::G18PA::Step::BuyTrain)
+        expect(alice.cash).to eq(550)
+        train = game.depot.depot_trains.find { |t| t.name == '3D' }
+        act(Action::BuyTrain, corporation, train: train, price: 600)
+        expect(alice.cash).to eq(0)
+        expect(alice.debt).to eq(75)
+        expect(corporation.trains).to include(train)
+      end
+
+      it 'forms NYC immediately after the first 4 buyer and inserts its operation' do
+        own_private('P1', alice)
+        own_private('P2', alice)
+        corporation = start_corporation
+        advance_to_phase('3')
+        game.depot.upcoming.select { |t| %w[2 3].include?(t.name) }.each { |t| game.depot.forget_train(t) }
+        begin_operations
+        2.times do
+          act(Action::Pass) # private track
+          act(Action::RunRoutes, routes: []) if game.round.active_step.is_a?(Step::Route)
+        end
+        act(Action::Pass) # PRR track
+        train = game.depot.depot_trains.first
+        expect(train.name).to eq('4')
+        act(Action::BuyTrain, corporation, train: train, price: 400)
+        expect(game.nyc).to be_floated
+        expect(game.current_entity).to eq(game.nyc)
+        expect(game.round.entities).to eq([game.minor_by_id('1'), game.minor_by_id('2'), corporation, game.nyc])
+        act(Action::Pass) # NYC track
+        expect(game.current_entity).to eq(alice)
+        expect(game.round.active_step).to be_a(Game::G18PA::Step::Convert)
+        act(Action::Choose, alice, choice: '0')
+      end
+
+      it 'borrows the shortfall with immediate interest to buy a mandatory depot train' do
+        corporation = start_corporation
+        corporation.spend(corporation.cash, game.bank)
+        alice.spend(alice.cash - 50, game.bank)
+        begin_operations
+        act(Action::Pass)
+        train = game.depot.depot_trains.first
+        act(Action::BuyTrain, corporation, train: train, price: 100)
+        expect(corporation.trains).to include(train)
+        expect(alice.cash).to eq(0)
+        expect(alice.debt).to eq(75)
+      end
+
+      it 'does not sell a third ordinary train even when that train would rust an existing train' do
+        corporation = start_corporation
+        2.times { game.buy_train(corporation, game.depot.depot_trains.first, :free) }
+        begin_operations
+        step = game.round.steps.find { |s| s.is_a?(Game::G18PA::Step::BuyTrain) }
+        expect(step.buyable_trains(corporation)).to be_empty
+        expect(step.actions(corporation)).to be_empty
+      end
+
+      it 'keeps 2R trains out of intercompany trade' do
+        corporation = start_corporation
+        other = start_corporation('B&A', bob)
+        game.create_regional_train(other)
+        begin_operations
+        step = game.round.steps.find { |s| s.is_a?(Game::G18PA::Step::BuyTrain) }
+        expect(step.other_trains(corporation)).not_to include(other.trains.first)
+      end
+    end
+
+    describe '18PA_game_end_bank' do
+      it 'finishes both operating rounds when the bank breaks during a stock round' do
+        replay = fixture_at_action(160, clear_cache: true)
+        expect(replay.round).to be_stock
+        replay.bank.break!
+        replay.process_to_action(213).maybe_raise!
+        expect(replay.finished).to be(false)
+        expect(replay.round.round_num).to eq(2)
+        replay.process_to_action(250).maybe_raise!
+        expect(replay.finished).to be(true)
+        expect(replay.game_end_reason).to eq(:bank)
       end
     end
 

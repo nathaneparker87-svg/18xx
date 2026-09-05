@@ -49,7 +49,7 @@ module Engine
             max = if player.debt.positive?
                     0
                   else
-                    [player.cash / corporation.share_price.price, @game.available_conversion_shares(corporation).size].min
+                    [player.cash.div(corporation.share_price.price), @game.available_conversion_shares(corporation).size].min
                   end
             (0..max).to_h do |count|
               [count.to_s, count.zero? ? 'Buy no shares' : "Buy #{count} shares for $#{count * corporation.share_price.price}"]

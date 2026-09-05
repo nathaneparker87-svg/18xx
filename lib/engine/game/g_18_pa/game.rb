@@ -76,8 +76,10 @@ module Engine
         end.freeze
 
         EVENTS_TEXT = Base::EVENTS_TEXT.merge(
-          'nyc_forms' => ['NYC forms', 'After this company finishes its turn, form the NYC; conversion and acquisition are allowed'],
-          'regional_trains' => ['Regional trains and ferry closure', 'Acquired locals become 2R trains; the Fall River ferry closes'],
+          'nyc_forms' => ['NYC forms',
+                          'After this company finishes its turn, form the NYC; conversion and acquisition are allowed'],
+          'regional_trains' => ['Regional trains and ferry closure',
+                                'Acquired locals become 2R trains; the Fall River ferry closes'],
         ).freeze
         DESTINATIONS = { 'B&O' => 'K2', 'B&A' => 'D17', 'ERIE' => 'C2', 'PRR' => 'I2' }.freeze
         FERRY_HEXES = %w[H23 H25 G26].freeze
@@ -125,7 +127,7 @@ module Engine
             train.buyable = false
             buy_train(minor, train, :free)
           end
-          @nyc_train = @depot.trains.select { |t| t.name == '3' }.last
+          @nyc_train = @depot.trains.reverse.find { |t| t.name == '3' }
           @nyc_train.reserved = true
           @nyc_train.buyable = false
           buy_train(nyc, @nyc_train, :free)
@@ -239,9 +241,7 @@ module Engine
           return if nyc.floatable
           return unless player.percent_of(nyc) >= 20
 
-          unless nyc.presidents_share.owner == player
-            @share_pool.change_president(nyc.presidents_share, nyc, player, nyc)
-          end
+          @share_pool.change_president(nyc.presidents_share, nyc, player, nyc) unless nyc.presidents_share.owner == player
           nyc.owner = player
           nyc.floatable = true
           nyc.floated = true
@@ -250,8 +250,9 @@ module Engine
         end
 
         def convert(corporation)
-          raise GameError, 'Conversion requires phase 4 and a 5-share public company' unless
-            @phase.available?('4') && corporation.type == :five_share
+          if !@phase.available?('4') || corporation.type != :five_share
+            raise GameError, 'Conversion requires phase 4 and a 5-share public company'
+          end
 
           shares = shares_for_corporation(corporation)
           corporation.share_holders.clear
@@ -279,7 +280,7 @@ module Engine
 
         def buy_conversion_shares(player, corporation, count)
           shares = available_conversion_shares(corporation)
-          unless player.debt.zero? && count.between?(0, shares.size) && count * corporation.share_price.price <= player.cash
+          if player.debt.positive? || !count.between?(0, shares.size) || count * corporation.share_price.price > player.cash
             raise GameError, 'Cannot afford this share purchase'
           end
 
@@ -294,7 +295,7 @@ module Engine
         end
 
         def acquirable_companies(corporation)
-          return [] unless corporation.corporation? && @phase.available?('4') && corporation.cash >= 220
+          return [] if !corporation.corporation? || !@phase.available?('4') || corporation.cash < 220
           return [] unless corporation.next_token
 
           @companies.select do |company|
@@ -325,7 +326,7 @@ module Engine
         end
 
         def update_holding_limit(corporation)
-          corporation.max_ownership_percent = [60 + @acquired_locals[corporation].size * corporation.share_percent, 100].min
+          corporation.max_ownership_percent = [60 + (@acquired_locals[corporation].size * corporation.share_percent), 100].min
         end
 
         def create_regional_train(corporation)
@@ -378,6 +379,7 @@ module Engine
           @hexes.each do |hex|
             hex.tile.cities.each do |city|
               city.tokens.compact.group_by(&:corporation).each_value do |tokens|
+                tokens.sort_by! { |token| token == token.corporation.tokens.first || token.type == :destination ? 0 : 1 }
                 tokens.drop(1).each(&:remove!)
               end
             end
@@ -385,8 +387,10 @@ module Engine
         end
 
         def action_processed(action)
-          return unless %w[lay_tile place_token].include?(action.type)
+          track_and_tokens_changed! if action.type == 'place_token'
+        end
 
+        def track_and_tokens_changed!
           remove_duplicate_tokens!
           @graph.clear
           check_destinations!
@@ -445,10 +449,11 @@ module Engine
           return unless ferry_route?(route)
 
           raise GameError, 'The Fall River ferry is closed' unless ferry_open?
+
           stop_hexes = route.visited_stops.map { |stop| stop.hex.id }
-          unless stop_hexes.include?('H21') && stop_hexes.include?('F27')
-            raise GameError, 'A ferry route must include Islip and Providence'
-          end
+          return if stop_hexes.include?('H21') && stop_hexes.include?('F27')
+
+          raise GameError, 'A ferry route must include Islip and Providence'
         end
 
         def end_game!(game_end_reason)

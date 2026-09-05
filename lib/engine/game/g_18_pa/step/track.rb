@@ -20,6 +20,12 @@ module Engine
             super
           end
 
+          def pay_tile_cost!(entity, tile, rotation, hex, spender, cost, extra_cost)
+            raise GameError, 'Private companies may only build track without a cost' if entity.minor? && cost.positive?
+
+            super
+          end
+
           def process_lay_tile(action)
             if action.entity.minor? && !potential_tile_colors(action.entity, action.hex).include?(action.tile.color)
               raise GameError, 'Private companies may only lay yellow or upgrade to green'
@@ -29,6 +35,7 @@ module Engine
             end
 
             super
+            @game.track_and_tokens_changed!
           end
         end
       end

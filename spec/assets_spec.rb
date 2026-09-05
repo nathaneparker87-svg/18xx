@@ -4,6 +4,22 @@ require 'spec_helper'
 require 'assets'
 
 TEST_CASES = [
+  ['18PA',
+   '18PA_game_end_bank',
+   [[0, 'private_auction', ['Place Bid', 'Mohawk and Hudson', 'Bid for the right to buy a private company']],
+    [3, 'private_selection', ['Choose a private company', 'Long Island']],
+    [15, 'stock_round', ['Sell then Buy Shares', 'NYC']],
+    [21, 'private_track', ['Lay/Upgrade Track', 'Mohawk and Hudson']],
+    [22, 'private_routes', 'Run Routes'],
+    [29, 'mining_rights', 'Buy Scranton mining rights'],
+    [30, 'mandatory_train', 'PRR must buy an available train'],
+    [138, 'nyc_formation', 'NYC is active'],
+    [139, 'nyc_shares', 'Buy shares after conversion'],
+    [146, 'conversion_shares', 'holding limits do not apply'],
+    [147, 'acquisition', 'Acquire local companies'],
+    [181, 'regional_acquisition', 'Acquire local companies'],
+    [195, 'diesel_phase', 'Phase 3D'],
+    [nil, 'endgame', 'Game Over - Bank Broken']]],
   ['1889',
    314,
    [[6, 'stock_round', 'Pass (Share)'],

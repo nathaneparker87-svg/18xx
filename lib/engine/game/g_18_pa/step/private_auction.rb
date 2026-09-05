@@ -67,6 +67,10 @@ module Engine
             player.cash - 110
           end
 
+          def committed_cash(player, _show_hidden = false)
+            @bid&.entity == player ? 110 + @bid.price : 0
+          end
+
           def active_entities
             @winner ? [@winner] : super
           end
@@ -87,7 +91,7 @@ module Engine
           end
 
           def process_bid(action)
-            unless action.price >= min_player_bid && action.price <= max_player_bid(action.entity) && (action.price % 5).zero?
+            if action.price < min_player_bid || action.price > max_player_bid(action.entity) || (action.price % 5).positive?
               raise GameError, 'Bid must be an affordable multiple of $5 above the current bid'
             end
             raise GameError, 'Choose a company only after winning the auction' if action.company

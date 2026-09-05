@@ -29,7 +29,7 @@ module Engine
           end
 
           def process_buy_company(action)
-            unless can_buy_company?(action.entity, action.company) && action.price == 110
+            if !can_buy_company?(action.entity, action.company) || action.price != 110
               raise GameError, 'An available private company costs $110 and counts as the stock purchase'
             end
 
@@ -43,9 +43,7 @@ module Engine
 
           def process_buy_shares(action)
             super
-            if action.bundle.corporation == @game.nyc && @game.nyc_formed
-              @game.activate_nyc(action.entity)
-            end
+            @game.activate_nyc(action.entity) if action.bundle.corporation == @game.nyc && @game.nyc_formed
           end
 
           def process_payoff_player_debt(action)
@@ -55,7 +53,7 @@ module Engine
           end
 
           def process_payoff_player_debt_partial(action)
-            unless action.amount.positive? && action.amount <= [action.entity.cash, action.entity.debt].min
+            if !action.amount.positive? || action.amount > [action.entity.cash, action.entity.debt].min
               raise GameError, 'Repayment must be positive and cannot exceed cash or outstanding debt'
             end
 

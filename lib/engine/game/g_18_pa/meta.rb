@@ -8,7 +8,7 @@ module Engine
       module Meta
         include Game::Meta
 
-        DEV_STAGE = :prealpha
+        DEV_STAGE = :alpha
 
         GAME_SUBTITLE = 'The Dawn of Rail: Empire Building From the Seaboard to the Ohio'
         GAME_DESIGNER = 'David G.D. Hecht'
