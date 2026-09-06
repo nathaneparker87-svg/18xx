@@ -212,6 +212,21 @@ module Engine
     end
 
     describe 'destinations and train revenue' do
+      it 'previews the Scranton bonus once and excludes visits by a 3D' do
+        corporation = start_corporation
+        allow(game).to receive(:scranton_marker?).with(corporation).and_return(true)
+        stop = game.hex_by_id('G12').tile.towns.first
+        route = instance_double(Route, corporation: corporation, train: instance_double(Train, name: '2'),
+                                       visited_stops: [stop], revenue: 50)
+        diesel = instance_double(Route, corporation: corporation, train: instance_double(Train, name: '3D'),
+                                        visited_stops: [stop], revenue: 230)
+        expect(game.submit_revenue_str([route], false)).to eq('$90 ($50 routes + $40 Scranton)')
+        expect(game.submit_revenue_str([route, route], false)).to eq('$140 ($100 routes + $40 Scranton)')
+        expect(game.submit_revenue_str([route, diesel], false)).to eq('$320 ($280 routes + $40 Scranton)')
+        expect(game.submit_revenue_str([diesel], false)).to eq('$230')
+        expect(game.submit_revenue_str([], false)).to eq('$0')
+      end
+
       it 'activates PRR at the instant its home connects to Pittsburgh' do
         corporation = start_corporation
         %w[I6 I4].each do |hex|

@@ -438,6 +438,14 @@ module Engine
           routes.any? { |r| r.train.name != '3D' && r.visited_stops.any? { |s| s.hex.id == SCRANTON_HEX } } ? 40 : 0
         end
 
+        def submit_revenue_str(routes, show_subsidy)
+          bonus = routes.empty? ? 0 : extra_revenue(routes.first.corporation, routes)
+          return super unless bonus.positive?
+
+          revenue = routes_revenue(routes)
+          "#{format_currency(revenue + bonus)} (#{format_currency(revenue)} routes + #{format_currency(bonus)} Scranton)"
+        end
+
         def ferry_route?(route)
           route.hexes.any? { |hex| hex.id == 'H25' }
         end
