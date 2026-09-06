@@ -290,6 +290,26 @@ module Engine
     end
 
     describe 'train purchases in an operating round' do
+      it 'shows the loan warning only when a mandatory purchase exceeds available funds' do
+        corporation = start_corporation
+        corporation.spend(corporation.cash - 90, game.bank)
+        game.bank.spend(90, alice)
+        advance_to_phase('5')
+        game.depot.upcoming.select { |t| %w[2 3 4].include?(t.name) }.each { |t| game.depot.forget_train(t) }
+        begin_operations
+        act(Action::Pass) until game.round.active_step.is_a?(Game::G18PA::Step::BuyTrain)
+        step = game.round.active_step
+        expect(alice.cash).to eq(390)
+        expect(step.must_take_player_loan?(corporation)).to be true
+        game.bank.spend(20, alice)
+        expect(step.must_take_player_loan?(corporation)).to be false
+        alice.spend(20, game.bank)
+        train = game.depot.depot_trains.find { |t| t.name == '5' }
+        act(Action::BuyTrain, corporation, train: train, price: 500)
+        expect(alice.debt).to eq(30)
+        expect(step.must_take_player_loan?(corporation)).to be false
+      end
+
       it 'allows a cash-only presidential contribution for a trade when the treasury is empty' do
         corporation = start_corporation
         other = start_corporation('B&A', bob)

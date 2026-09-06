@@ -19,6 +19,11 @@ module Engine
             super.select { |train| train.owner.corporation? && train.owner.floated? && train.name != '2R' }
           end
 
+          def must_take_player_loan?(entity)
+            must_buy_train?(entity) &&
+              @game.depot.min_depot_price > entity.cash + @game.liquidity(entity.owner, emergency: true)
+          end
+
           def buyable_trains(entity)
             return [] unless room?(entity)
 
